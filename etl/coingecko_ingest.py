@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 load_dotenv()
 
 API_KEY = os.getenv("COINGECKO_API_KEY")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
 if not API_KEY:
     raise ValueError("Missing COINGECKO_API_KEY in .env file")
@@ -57,7 +58,7 @@ df["ingestion_time"] = datetime.now(timezone.utc)
 print(f"Fetched {len(df)} records")
 
 #load to mongodb
-client = MongoClient("mongodb://localhost:27017/")
+client = MongoClient(MONGO_URI)
 
 db = client["crypto_db"]
 collection = db["market_data"]
@@ -66,6 +67,6 @@ records = df.to_dict(orient="records")
 
 if records:
     collection.insert_many(records)
-    print("Data successfully inserted into MongoDB 🚀")
+    print("Data successfully inserted into MongoDB")
 else:
     print("No data to insert")
