@@ -1,8 +1,10 @@
 import os
-from pymongo import MongoClient
-from sqlalchemy import create_engine
 import pandas as pd
+from pymongo import MongoClient
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+
+#configuration
 
 load_dotenv()
 
@@ -11,17 +13,19 @@ PG_PORT = os.getenv("POSTGRES_PORT")
 PG_DB = os.getenv("POSTGRES_DB")
 PG_USER = os.getenv("POSTGRES_USER")
 PG_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
-# Connect to MongoDB
+# connect to mongodb
+
 mongo_client = MongoClient(MONGO_URI)
 mongo_db = mongo_client["crypto_db"]
 collection = mongo_db["market_data"]
 
-# Retrieve raw market data
+#extract from mongodb
+
 documents = list(collection.find())
 
-# Build an analytical dataset
 records = []
 
 for doc in documents:
@@ -39,9 +43,10 @@ for doc in documents:
 
 df = pd.DataFrame(records)
 
-print(f"Prepared {len(df)} records for loading.")
+print(f"Prepared {len(df)} records from MongoDB")
 
-# Connect to PostgreSQL
+#connect to postgresql
+
 DATABASE_URL = (
     f"postgresql://{PG_USER}:{PG_PASSWORD}"
     f"@{PG_HOST}:{PG_PORT}/{PG_DB}"
@@ -49,12 +54,47 @@ DATABASE_URL = (
 
 engine = create_engine(DATABASE_URL)
 
-# Load data into the analytics layer
-df.to_sql(
-    "crypto_market_snapshot",
-    engine,
-    if_exists="append",
-    index=False
-)
+# LOAD TO POSTGRESQL load to postgresql
 
-print("Data successfully loaded into PostgreSQL.")
+insert_sql = text("""
+    INSERT INTO crypto_market_snapshot (
+        coin_id,
+        symbol,
+        name,
+        current_price,
+        market_cap,
+        market_cap_rank,
+        total_volume,
+        price_change_percentage_24h,
+        ingestion_time
+    )
+    VALUES (
+        :coin_id,
+        :symbol,
+        :name,
+        :current_price,
+        :market_cap,
+        :market_cap_rank,
+        :total_volume,
+        :price_change_percentage_24h,
+        :ingestion_time
+    )
+    ON CONFLICT (coin_id, ingestion_time)
+    DO NOTHING
+""")
+
+inserted_rows = 0
+
+with engine.begin() as connection:
+
+    for _, row in df.iterrows():
+
+        result = connection.execute(
+            insert_sql,
+            row.to_dict()
+        )
+
+        inserted_rows += result.rowcount
+
+print(f"Inserted {inserted_rows} new records into PostgreSQL")
+print("Load completed successfully")
